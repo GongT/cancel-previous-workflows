@@ -30,7 +30,8 @@ type Workflow struct {
 }
 
 type WorkflowsResponse struct {
-	Workflows []Workflow `json:"workflows"`
+	TotalCount int        `json:"total_count"`
+	Workflows  []Workflow `json:"workflows"`
 }
 
 type WorkflowRun struct {
@@ -43,7 +44,7 @@ type WorkflowRun struct {
 }
 
 type WorkflowRunsResponse struct {
-	TotalCount   uint64        `json:"total_count"`
+	TotalCount   int           `json:"total_count"`
 	WorkflowRuns []WorkflowRun `json:"workflow_runs"`
 }
 
@@ -56,6 +57,7 @@ var currentSha = os.Getenv("GITHUB_SHA")
 var workflowName = os.Getenv("GITHUB_WORKFLOW")
 var currentRunNumber, _ = strconv.Atoi(os.Getenv("GITHUB_RUN_NUMBER"))
 var isCancelAll = len(os.Getenv("CANCEL_ALL")) > 0
+var requestPerPage = 100
 
 func githubRequest(request *http.Request) (*http.Response, error) {
 	request.Header.Set("Accept", "application/vnd.github.v3+json")
@@ -116,13 +118,13 @@ func main() {
 
 	log.Printf("  * found %v runs", len(runsList))
 
-	var shouldCancel []WorkflowRun
+	var shouldCancel []*WorkflowRun
 	if isCancelAll {
 		for _, run := range runsList {
 			if run.RunNumber == currentRunNumber {
 				continue // skip my self anyway
 			}
-			shouldCancel = append(shouldCancel, run)
+			shouldCancel = append(shouldCancel, &run)
 		}
 	} else {
 		for _, run := range runsList {
@@ -140,77 +142,113 @@ func main() {
 				continue
 			}
 
-			shouldCancel = append(shouldCancel, run)
+			shouldCancel = append(shouldCancel, &run)
 		}
 	}
 
-	log.Printf("  *         %v should cancel", len(shouldCancel))
+	log.Printf("          %v should cancel", len(shouldCancel))
 
 	var wg = sync.WaitGroup{}
 	count := len(shouldCancel)
-	for index, run := range shouldCancel {
-		log.Printf("canceling run https://github.com/%s/actions/runs/%d\n", githubRepo, run.Id)
+
+	mu := sync.Mutex{}
+	index := 0
+	s := strconv.Itoa(len(strconv.Itoa(count)))
+
+	var okCnt, errCnt int
+
+	for _, run := range shouldCancel {
 		wg.Add(1)
-		go func(index int, id int64) {
+		go func(id int64) {
 			defer wg.Done()
-			if err := cancelWorkflow(id); err != nil {
-				log.Printf("  [%3d/%3d] error cancel workflow run (%v): %v\n", index, count, id, err)
+			err := cancelWorkflow(id)
+
+			mu.Lock()
+			defer mu.Unlock()
+			index++
+			if err == nil {
+				okCnt++
+				log.Printf("  [%"+s+"d/%"+s+"d] done [%v]\n", index, count, id)
+			} else {
+				errCnt++
+				log.Printf("  [%"+s+"d/%"+s+"d] error [%v]: %v\n", index, count, id, err)
 			}
-			log.Printf("  [%3d/%3d] done cancel workflow run (%v)\n", index, count, id)
-		}(index, run.Id)
+		}(run.Id)
 	}
 	wg.Wait()
-	log.Println("All done.")
+	log.Printf("All done, %v success, %v error.\n", okCnt, errCnt)
 }
 
-func getWorkflowId() (ret int64, err error) {
+func getWorkflowId() (int64, error) {
 	query := make(url.Values)
-	query.Set("per_page", "100")
-	body, err := doRequest(githubApi("repos/%s/actions/workflows", githubRepo), query)
-	if err != nil {
-		return
-	}
+	query.Set("per_page", strconv.Itoa(requestPerPage))
 
-	var workflows WorkflowsResponse
-	if err = json.Unmarshal(body, &workflows); err != nil {
-		return
-	}
+	api := githubApi("repos/%s/actions/workflows", githubRepo)
 
-	for _, item := range workflows.Workflows {
-		if item.Name == workflowName {
-			return item.Id, nil
+	var curr = 0
+	for {
+		log.Printf("  * page %v...", curr)
+		query.Set("page", strconv.Itoa(curr))
+
+		body, err := doRequest(api, query)
+		if err != nil {
+			return 0, err
+		}
+
+		var workflows WorkflowsResponse
+		if err = json.Unmarshal(body, &workflows); err != nil {
+			return 0, err
+		}
+
+		for _, item := range workflows.Workflows {
+			if item.Name == workflowName {
+				return item.Id, nil
+			}
+		}
+
+		curr++
+
+		if len(workflows.Workflows) == 0 {
+			break
 		}
 	}
+
 	return 0, fmt.Errorf("workflow with name '%v' did not exists", workflowName)
 }
 
 func listRuns(state StateType) (runs []WorkflowRun, err error) {
-	var curr uint64 = 0
-	for {
-		log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
-		query := make(url.Values)
+	log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
 
-		query.Set("page", strconv.FormatUint(curr, 10))
-		query.Set("per_page", "100")
-		query.Set("branch", branchName)
-		query.Set("status", string(state))
-		body, err := doRequest(githubApi("repos/%s/actions/runs", githubRepo), query)
+	query := make(url.Values)
+	query.Set("per_page", strconv.Itoa(requestPerPage))
+	query.Set("branch", branchName)
+	query.Set("status", string(state))
+
+	api := githubApi("repos/%s/actions/runs", githubRepo)
+
+	var curr = 0
+	for {
+		log.Printf("  * page %v...", curr)
+		query.Set("page", strconv.Itoa(curr))
+
+		body, err := doRequest(api, query)
 		if err != nil {
-			log.Printf("error request api [page=%v]: %v", curr, err)
+			log.Printf("    error request api: %v", err)
 			continue
 		}
 
 		var workflows WorkflowRunsResponse
 		err = json.Unmarshal(body, &workflows)
 		if err != nil {
-			log.Printf("error parse json [page=%v]: %v", curr, err)
+			log.Printf("    error parse json: %v", err)
 			continue
 		}
 
 		runs = append(runs, workflows.WorkflowRuns...)
 		curr++
 
-		if workflows.TotalCount <= (curr * 100) {
+		log.Printf("    got=%v | current size=%v | total count=%v", len(workflows.WorkflowRuns), len(runs), workflows.TotalCount)
+		if workflows.TotalCount <= len(runs) || len(workflows.WorkflowRuns) == 0 {
 			break
 		}
 	}
