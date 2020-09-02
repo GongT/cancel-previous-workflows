@@ -17,3 +17,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 ```
+
+## tool - delete all actions logs
+
+```bash
+export GITHUB_TOKEN="xxxxxxxxxxxxxxxx"
+export GITHUB_REPOSITORY="user/repo"
+go run ./cmd/delete-logs/main.go
+```

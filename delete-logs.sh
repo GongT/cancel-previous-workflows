@@ -15,6 +15,4 @@ if [[ "${GITHUB_TOKEN+found}" != found ]]; then
 fi
 export GITHUB_TOKEN
 
-export NO_FILTER=yes
-
-go run ./cmd/ci/*.go
+go run ./cmd/delete-logs/*.go
