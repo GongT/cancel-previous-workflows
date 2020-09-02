@@ -53,8 +53,9 @@ func main() {
 			shouldCancel = append(shouldCancel, run)
 		}
 	} else {
-		log.Printf("finding workflow names in repo %s\n", github.GetCurrentRepo())
+		log.Printf("finding workflow %v in repo %v\n", os.Getenv("GITHUB_WORKFLOW"), github.GetCurrentRepo())
 		workflowId, err := github.GetWorkflowId()
+		log.Printf("    id is %v\n", workflowId)
 		if err != nil {
 			log.Printf("error find workflow id: %v\n", err)
 			return
@@ -64,9 +65,9 @@ func main() {
 			if run.HeadBranch != branchName {
 				continue // should not happen cuz we pre-filter, but better safe than sorry
 			}
-			if run.HeadSha == currentSha {
-				continue // not canceling my own jobs
-			}
+			// if run.HeadSha == currentSha {
+			// 	continue // not canceling my own jobs
+			// }
 			if currentRunNumber != 0 && run.RunNumber > currentRunNumber {
 				continue // only canceling previous executions, not newer ones
 			}
@@ -93,7 +94,7 @@ func main() {
 
 		if err == nil {
 			okCnt++
-			log.Printf("  [%"+s+"d/%"+s+"d] done [%v]: %v\n", index+1, count, id)
+			log.Printf("  [%"+s+"d/%"+s+"d] done [%v]\n", index+1, count, id)
 		} else {
 			errCnt++
 			log.Printf("  [%"+s+"d/%"+s+"d] error [%v]: %v\n", index+1, count, id, err)
