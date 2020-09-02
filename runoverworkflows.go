@@ -12,7 +12,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -148,34 +147,24 @@ func main() {
 
 	log.Printf("          %v should cancel", len(shouldCancel))
 
-	var wg = sync.WaitGroup{}
 	count := len(shouldCancel)
 
-	mu := sync.Mutex{}
-	index := 0
 	s := strconv.Itoa(len(strconv.Itoa(count)))
 
 	var okCnt, errCnt int
 
-	for _, run := range shouldCancel {
-		wg.Add(1)
-		go func(id int64) {
-			defer wg.Done()
-			err := cancelWorkflow(id)
+	for index, run := range shouldCancel {
+		id := run.Id
+		err := cancelWorkflow(id)
 
-			mu.Lock()
-			defer mu.Unlock()
-			index++
-			if err == nil {
-				okCnt++
-				log.Printf("  [%"+s+"d/%"+s+"d] done [%v]\n", index, count, id)
-			} else {
-				errCnt++
-				log.Printf("  [%"+s+"d/%"+s+"d] error [%v]: %v\n", index, count, id, err)
-			}
-		}(run.Id)
+		if err == nil {
+			okCnt++
+			log.Printf("  [%"+s+"d/%"+s+"d] done [%v]\n", index, count, id)
+		} else {
+			errCnt++
+			log.Printf("  [%"+s+"d/%"+s+"d] error [%v]: %v\n", index, count, id, err)
+		}
 	}
-	wg.Wait()
 	log.Printf("All done, %v success, %v error.\n", okCnt, errCnt)
 }
 
