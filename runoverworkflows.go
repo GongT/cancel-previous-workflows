@@ -155,7 +155,7 @@ func main() {
 }
 
 func getWorkflowId() (ret int64, err error) {
-	var query url.Values
+	query := make(url.Values)
 	query.Set("per_page", "100")
 	body, err := doRequest(githubApi("repos/%s/actions/workflows", githubRepo), query)
 	if err != nil {
@@ -177,7 +177,7 @@ func getWorkflowId() (ret int64, err error) {
 
 func listRuns(state StateType) (workflows WorkflowRunsResponse, err error) {
 	log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
-	var query url.Values
+	query := make(url.Values)
 	query.Set("branch", branchName)
 	query.Set("status", string(state))
 	body, err := doRequest(githubApi("repos/%s/actions/runs", githubRepo), query)
