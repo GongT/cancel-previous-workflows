@@ -16,6 +16,14 @@ import (
 	"time"
 )
 
+type StateType string
+
+const (
+	StateTypeQueue      StateType = "queued"
+	StateTypeComplete   StateType = "completed"
+	StateTypeInProgress StateType = "in_progress"
+)
+
 type Workflow struct {
 	Id   int64  `json:"id"`
 	Name string `json:"name"`
@@ -32,8 +40,6 @@ type WorkflowRun struct {
 	HeadBranch string `json:"head_branch"`
 	RunNumber  int    `json:"run_number"`
 	WorkflowId int64  `json:"workflow_id"`
-
-	willCancel bool
 }
 
 type WorkflowRunsResponse struct {
@@ -48,6 +54,7 @@ var branchName = strings.Replace(os.Getenv("GITHUB_REF"), "refs/heads/", "", 1)
 var currentSha = os.Getenv("GITHUB_SHA")
 var workflowName = os.Getenv("GITHUB_WORKFLOW")
 var currentRunNumber, _ = strconv.Atoi(os.Getenv("GITHUB_RUN_NUMBER"))
+var isCancelAll = len(os.Getenv("CANCEL_ALL")) > 0
 
 func githubRequest(request *http.Request) (*http.Response, error) {
 	request.Header.Set("Accept", "application/vnd.github.v3+json")
@@ -92,52 +99,47 @@ func main() {
 		return
 	}
 
-	log.Printf("listing runs for branch %s in repo %s\n", branchName, githubRepo)
-	var query url.Values
-	query.Set("branch", branchName)
-	body, err := doRequest(githubApi("repos/%s/actions/runs", githubRepo), query)
-	if err != nil {
+	var runsList []WorkflowRun
+	if queued, err := listRuns(StateTypeQueue); err == nil {
+		runsList = append(runsList, queued.WorkflowRuns...)
+	} else {
+		log.Printf("error get action runs: %v\n", err)
+		return
+	}
+	if inProgress, err := listRuns(StateTypeInProgress); err == nil {
+		runsList = append(runsList, inProgress.WorkflowRuns...)
+	} else {
 		log.Printf("error get action runs: %v\n", err)
 		return
 	}
 
-	var workflows WorkflowRunsResponse
-	if err = json.Unmarshal(body, &workflows); err != nil {
-		log.Println(err)
-		return
+	log.Printf("  * found %v runs", len(runsList))
+
+	var shouldCancel []WorkflowRun
+	if !isCancelAll {
+		for _, run := range runsList {
+			if run.HeadBranch != branchName {
+				continue // should not happen cuz we pre-filter, but better safe than sorry
+			}
+			if run.HeadSha == currentSha {
+				continue // not canceling my own jobs
+			}
+			if currentRunNumber != 0 && run.RunNumber > currentRunNumber {
+				continue // only canceling previous executions, not newer ones
+			}
+			if run.WorkflowId != workflowId {
+				log.Printf(" ! found run %v, number %v, workflow = %v | want = %v", run.Id, run.RunNumber, run.WorkflowId, workflowId)
+				continue
+			}
+
+			shouldCancel = append(shouldCancel, run)
+		}
 	}
 
-	var shouldCancel uint = 0
-	for _, run := range workflows.WorkflowRuns {
-		if run.Status == "completed" {
-			continue // not canceling completed jobs
-		}
-		if run.HeadBranch != branchName {
-			continue // should not happen cuz we pre-filter, but better safe than sorry
-		}
-		if run.HeadSha == currentSha {
-			continue // not canceling my own jobs
-		}
-		if currentRunNumber != 0 && run.RunNumber > currentRunNumber {
-			continue // only canceling previous executions, not newer ones
-		}
-		if run.WorkflowId != workflowId {
-			log.Printf(" ! found run %v, number %v, workflow = %v | want = %v", run.Id, run.RunNumber, run.WorkflowId, workflowId)
-			continue
-		}
-
-		run.willCancel = true
-		shouldCancel++
-	}
-
-	log.Printf("  * found %v runs, %v should cancel", len(workflows.WorkflowRuns), shouldCancel)
+	log.Printf("  *         %v should cancel", len(shouldCancel))
 
 	var wg = sync.WaitGroup{}
-	for _, run := range workflows.WorkflowRuns {
-		if !run.willCancel {
-			continue
-		}
-
+	for _, run := range shouldCancel {
 		log.Printf("canceling run https://github.com/%s/actions/runs/%d\n", githubRepo, run.Id)
 		wg.Add(1)
 		go func(id int64) {
@@ -171,6 +173,24 @@ func getWorkflowId() (ret int64, err error) {
 		}
 	}
 	return 0, fmt.Errorf("workflow with name '%v' did not exists", workflowName)
+}
+
+func listRuns(state StateType) (workflows WorkflowRunsResponse, err error) {
+	log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
+	var query url.Values
+	query.Set("branch", branchName)
+	query.Set("status", string(state))
+	body, err := doRequest(githubApi("repos/%s/actions/runs", githubRepo), query)
+	if err != nil {
+		return
+	}
+
+	err = json.Unmarshal(body, &workflows)
+	if err != nil {
+		log.Println(err)
+	}
+
+	return
 }
 
 func doRequest(url string, query url.Values) ([]byte, error) {
