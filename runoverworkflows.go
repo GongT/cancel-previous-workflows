@@ -117,7 +117,12 @@ func main() {
 
 	var shouldCancel []WorkflowRun
 	if isCancelAll {
-		shouldCancel = runsList
+		for _, run := range runsList {
+			if run.RunNumber == currentRunNumber {
+				continue // skip my self anyway
+			}
+			shouldCancel = append(shouldCancel, run)
+		}
 	} else {
 		for _, run := range runsList {
 			if run.HeadBranch != branchName {
@@ -141,19 +146,20 @@ func main() {
 	log.Printf("  *         %v should cancel", len(shouldCancel))
 
 	var wg = sync.WaitGroup{}
-	for _, run := range shouldCancel {
+	count := len(shouldCancel)
+	for index, run := range shouldCancel {
 		log.Printf("canceling run https://github.com/%s/actions/runs/%d\n", githubRepo, run.Id)
 		wg.Add(1)
-		go func(id int64) {
+		go func(index int, id int64) {
 			defer wg.Done()
 			if err := cancelWorkflow(id); err != nil {
-				log.Printf("  * error cancel workflow run (%v): %v\n", id, err)
+				log.Printf("  [%3d/%3d] error cancel workflow run (%v): %v\n", index, count, id, err)
 			}
-			log.Printf("  * done cancel workflow run (%v)\n", id)
-		}(run.Id)
+			log.Printf("  [%3d/%3d] done cancel workflow run (%v)\n", index, count, id)
+		}(index, run.Id)
 	}
-	log.Println("All done.")
 	wg.Wait()
+	log.Println("All done.")
 }
 
 func getWorkflowId() (ret int64, err error) {
