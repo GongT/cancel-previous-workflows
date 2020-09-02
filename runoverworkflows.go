@@ -32,6 +32,8 @@ type WorkflowRun struct {
 	HeadBranch string `json:"head_branch"`
 	RunNumber  int    `json:"run_number"`
 	WorkflowId int64  `json:"workflow_id"`
+
+	willCancel bool
 }
 
 type WorkflowRunsResponse struct {
@@ -46,7 +48,6 @@ var branchName = strings.Replace(os.Getenv("GITHUB_REF"), "refs/heads/", "", 1)
 var currentSha = os.Getenv("GITHUB_SHA")
 var workflowName = os.Getenv("GITHUB_WORKFLOW")
 var currentRunNumber, _ = strconv.Atoi(os.Getenv("GITHUB_RUN_NUMBER"))
-var wg = sync.WaitGroup{}
 
 func githubRequest(request *http.Request) (*http.Response, error) {
 	request.Header.Set("Accept", "application/vnd.github.v3+json")
@@ -105,6 +106,8 @@ func main() {
 		log.Println(err)
 		return
 	}
+
+	var shouldCancel uint = 0
 	for _, run := range workflows.WorkflowRuns {
 		if run.Status == "completed" {
 			continue // not canceling completed jobs
@@ -122,15 +125,30 @@ func main() {
 			log.Printf(" ! found run %v, number %v, workflow = %v | want = %v", run.Id, run.RunNumber, run.WorkflowId, workflowId)
 			continue
 		}
+
+		run.willCancel = true
+		shouldCancel++
+	}
+
+	log.Printf("  * found %v runs, %v should cancel", len(workflows.WorkflowRuns), shouldCancel)
+
+	var wg = sync.WaitGroup{}
+	for _, run := range workflows.WorkflowRuns {
+		if !run.willCancel {
+			continue
+		}
+
 		log.Printf("canceling run https://github.com/%s/actions/runs/%d\n", githubRepo, run.Id)
 		wg.Add(1)
 		go func(id int64) {
 			defer wg.Done()
 			if err := cancelWorkflow(id); err != nil {
-				log.Printf("error cancel workflow: %v\n", err)
+				log.Printf("  * error cancel workflow run (%v): %v\n", id, err)
 			}
+			log.Printf("  * done cancel workflow run (%v)\n", id)
 		}(run.Id)
 	}
+	log.Println("All done.")
 	wg.Wait()
 }
 
