@@ -116,7 +116,9 @@ func main() {
 	log.Printf("  * found %v runs", len(runsList))
 
 	var shouldCancel []WorkflowRun
-	if !isCancelAll {
+	if isCancelAll {
+		shouldCancel = runsList
+	} else {
 		for _, run := range runsList {
 			if run.HeadBranch != branchName {
 				continue // should not happen cuz we pre-filter, but better safe than sorry
