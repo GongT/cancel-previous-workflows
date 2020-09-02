@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: cancel running workflows
-        uses: everphone-gmbh/cancel-previous-workflows@v5
+        uses: GongT/cancel-previous-workflows@master
         env:
           GITHUB_TOKEN: ${{ github.token }}
 ```

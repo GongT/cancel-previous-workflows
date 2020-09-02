@@ -1,5 +1,5 @@
-name: 'Cancel All Previous Workflow Runs'
-description: 'A Github action that cancels all previous workflows for older commits in its branch (not workflow specific)'
+name: 'Cancel Previous Workflow Runs'
+description: 'A Github action that cancels all previous workflows for older commits in its branch (workflow specific)'
 runs:
   using: 'docker'
   image: 'Dockerfile'
