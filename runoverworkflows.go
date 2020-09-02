@@ -70,20 +70,29 @@ func githubRequest(request *http.Request) (*http.Response, error) {
 	return response, nil
 }
 
-func cancelWorkflow(id int64) error {
+func cancelWorkflow(id int64) (string, error) {
 	request, err := http.NewRequest("POST", githubApi("repos/%s/actions/runs/%d/cancel", githubRepo, id), nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	response, err := githubRequest(request)
 	if err != nil {
-		return err
+		return "", err
 	}
+	body, _ := ioutil.ReadAll(response.Body)
 	if response.StatusCode != http.StatusAccepted {
-		body, _ := ioutil.ReadAll(response.Body)
-		return errors.New(fmt.Sprintf("failed to cancel workflow #%d, status code: %d, body: %s", id, response.StatusCode, body))
+		return "", errors.New(fmt.Sprintf("failed to cancel workflow #%d, status code: %d, body: %s", id, response.StatusCode, body))
 	}
-	return nil
+	return string(body), nil
+}
+
+func isIn(arr []*WorkflowRun, val *WorkflowRun) bool {
+	for _, item := range arr {
+		if val.Id == item.Id {
+			return true
+		}
+	}
+	return false
 }
 
 // I don't wan't to fail the current workflow if I fail canceling previous workflow's => so I only log errors
@@ -96,14 +105,7 @@ func main() {
 	customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	httpClient = http.Client{Transport: customTransport, Timeout: time.Minute}
 
-	log.Printf("finding workflow names in repo %s\n", githubRepo)
-	workflowId, err := getWorkflowId()
-	if err != nil {
-		log.Printf("error find workflow id: %v\n", err)
-		return
-	}
-
-	var runsList []WorkflowRun
+	var runsList []*WorkflowRun
 	if queued, err := listRuns(StateTypeQueue); err == nil {
 		runsList = append(runsList, queued...)
 	} else {
@@ -117,18 +119,38 @@ func main() {
 		return
 	}
 
-	log.Printf("  * found %v runs", len(runsList))
+	runsListDedup := make([]*WorkflowRun, 0, len(runsList))
+	skip := make([]int64, 0, len(runsList))
+	for _, r := range runsList {
+		if !isIn(runsListDedup, r) {
+			runsListDedup = append(runsListDedup, r)
+		} else {
+			skip = append(skip, r.Id)
+		}
+	}
+	if (len(skip)) > 0 {
+		log.Printf("skip ids: %v", skip)
+	}
+
+	log.Printf("  * found %v runs", len(runsListDedup))
 
 	var shouldCancel []*WorkflowRun
 	if isCancelAll {
-		for _, run := range runsList {
+		for _, run := range runsListDedup {
 			if run.RunNumber == currentRunNumber {
 				continue // skip my self anyway
 			}
-			shouldCancel = append(shouldCancel, &run)
+			shouldCancel = append(shouldCancel, run)
 		}
 	} else {
-		for _, run := range runsList {
+		log.Printf("finding workflow names in repo %s\n", githubRepo)
+		workflowId, err := getWorkflowId()
+		if err != nil {
+			log.Printf("error find workflow id: %v\n", err)
+			return
+		}
+
+		for _, run := range runsListDedup {
 			if run.HeadBranch != branchName {
 				continue // should not happen cuz we pre-filter, but better safe than sorry
 			}
@@ -143,7 +165,7 @@ func main() {
 				continue
 			}
 
-			shouldCancel = append(shouldCancel, &run)
+			shouldCancel = append(shouldCancel, run)
 		}
 	}
 
@@ -157,14 +179,14 @@ func main() {
 
 	for index, run := range shouldCancel {
 		id := run.Id
-		err := cancelWorkflow(id)
+		_, err := cancelWorkflow(id)
 
 		if err == nil {
 			okCnt++
-			log.Printf("  [%"+s+"d/%"+s+"d] done [%v]\n", index, count, id)
+			log.Printf("  [%"+s+"d/%"+s+"d] done [%v]: %v\n", index+1, count, id)
 		} else {
 			errCnt++
-			log.Printf("  [%"+s+"d/%"+s+"d] error [%v]: %v\n", index, count, id, err)
+			log.Printf("  [%"+s+"d/%"+s+"d] error [%v]: %v\n", index+1, count, id, err)
 		}
 	}
 	log.Printf("All done, %v success, %v error.\n", okCnt, errCnt)
@@ -207,7 +229,7 @@ func getWorkflowId() (int64, error) {
 	return 0, fmt.Errorf("workflow with name '%v' did not exists", workflowName)
 }
 
-func listRuns(state StateType) (runs []WorkflowRun, err error) {
+func listRuns(state StateType) (runs []*WorkflowRun, err error) {
 	log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
 
 	query := make(url.Values)
@@ -235,7 +257,21 @@ func listRuns(state StateType) (runs []WorkflowRun, err error) {
 			continue
 		}
 
-		runs = append(runs, workflows.WorkflowRuns...)
+		for _, item := range workflows.WorkflowRuns {
+			r := &WorkflowRun{
+				Id:         item.Id,
+				Status:     item.Status,
+				HeadSha:    item.HeadSha,
+				HeadBranch: item.HeadBranch,
+				RunNumber:  item.RunNumber,
+				WorkflowId: item.WorkflowId,
+			}
+			if !isIn(runs, r) {
+				runs = append(runs, r)
+			} else {
+				log.Printf("  ! duplicate id: %v", r.Id)
+			}
+		}
 		curr++
 
 		log.Printf("    got=%v | current size=%v | total count=%v", len(workflows.WorkflowRuns), len(runs), workflows.TotalCount)
