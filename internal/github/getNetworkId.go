@@ -11,6 +11,10 @@ import (
 
 var workflowName = os.Getenv("GITHUB_WORKFLOW")
 
+func GetCurrentWorkflowName() string {
+	return workflowName
+}
+
 func GetWorkflowId() (int64, error) {
 	query := make(url.Values)
 	query.Set("per_page", strconv.Itoa(requestPerPage))

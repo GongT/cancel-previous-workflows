@@ -15,6 +15,12 @@ var currentRunNumber, _ = strconv.Atoi(os.Getenv("GITHUB_RUN_NUMBER"))
 var isCancelAll = len(os.Getenv("NO_FILTER")) > 0
 
 func main() {
+	log.Printf("CurrentRunNumber=%v\n", currentRunNumber)
+	log.Printf("CurrentWorkflowName=%v\n", github.GetCurrentWorkflowName())
+	log.Printf("BranchName=%v\n", branchName)
+	log.Printf("GITHUB_SHA=%v\n", currentSha)
+	log.Printf("isCancelAll=%v\n", isCancelAll)
+
 	var runsList []*github.WorkflowRun
 	if queued, err := github.ListRuns(github.StateTypeQueue, branchName); err == nil {
 		runsList = append(runsList, queued...)
@@ -53,7 +59,7 @@ func main() {
 			shouldCancel = append(shouldCancel, run)
 		}
 	} else {
-		log.Printf("finding workflow %v in repo %v\n", os.Getenv("GITHUB_WORKFLOW"), github.GetCurrentRepo())
+		log.Printf("finding workflow %v in repo %v\n", github.GetCurrentWorkflowName(), github.GetCurrentRepo())
 		workflowId, err := github.GetWorkflowId()
 		log.Printf("    id is %v\n", workflowId)
 		if err != nil {
@@ -63,16 +69,18 @@ func main() {
 
 		for _, run := range runsListDedup {
 			if run.HeadBranch != branchName {
+				log.Printf("      ! [%v] skip other branch: %v != %v", run.Id, run.HeadBranch, branchName)
 				continue // should not happen cuz we pre-filter, but better safe than sorry
 			}
 			// if run.HeadSha == currentSha {
 			// 	continue // not canceling my own jobs
 			// }
 			if currentRunNumber != 0 && run.RunNumber > currentRunNumber {
+				log.Printf("      ! [%v] skip run number: %v", run.Id, run.RunNumber)
 				continue // only canceling previous executions, not newer ones
 			}
 			if run.WorkflowId != workflowId {
-				log.Printf(" ! found run %v, number %v, workflow = %v | want = %v", run.Id, run.RunNumber, run.WorkflowId, workflowId)
+				log.Printf("      ! [%v] skip other workflow: %v", run.Id, run.WorkflowId)
 				continue
 			}
 
