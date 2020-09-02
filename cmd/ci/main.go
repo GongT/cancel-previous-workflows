@@ -4,12 +4,10 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/GongT/cancel-previous-workflows/internal/github"
 )
 
-var branchName = strings.Replace(os.Getenv("GITHUB_REF"), "refs/heads/", "", 1)
 var currentSha = os.Getenv("GITHUB_SHA")
 var currentRunNumber, _ = strconv.Atoi(os.Getenv("GITHUB_RUN_NUMBER"))
 var isCancelAll = len(os.Getenv("NO_FILTER")) > 0
@@ -17,18 +15,18 @@ var isCancelAll = len(os.Getenv("NO_FILTER")) > 0
 func main() {
 	log.Printf("CurrentRunNumber=%v\n", currentRunNumber)
 	log.Printf("CurrentWorkflowName=%v\n", github.GetCurrentWorkflowName())
-	log.Printf("BranchName=%v\n", branchName)
+	log.Printf("BranchName=%v\n", github.GetBranchName())
 	log.Printf("GITHUB_SHA=%v\n", currentSha)
 	log.Printf("isCancelAll=%v\n", isCancelAll)
 
 	var runsList []*github.WorkflowRun
-	if queued, err := github.ListRuns(github.StateTypeQueue, branchName); err == nil {
+	if queued, err := github.ListRuns(github.StateTypeQueue); err == nil {
 		runsList = append(runsList, queued...)
 	} else {
 		log.Printf("error get action runs: %v\n", err)
 		return
 	}
-	if inProgress, err := github.ListRuns(github.StateTypeInProgress, branchName); err == nil {
+	if inProgress, err := github.ListRuns(github.StateTypeInProgress); err == nil {
 		runsList = append(runsList, inProgress...)
 	} else {
 		log.Printf("error get action runs: %v\n", err)
@@ -68,8 +66,8 @@ func main() {
 		}
 
 		for _, run := range runsListDedup {
-			if run.HeadBranch != branchName {
-				log.Printf("      ! [%v] skip other branch: %v != %v", run.Id, run.HeadBranch, branchName)
+			if run.HeadBranch != github.GetBranchName() {
+				log.Printf("      ! [%v] skip other branch: %v != %v", run.Id, run.HeadBranch, github.GetBranchName())
 				continue // should not happen cuz we pre-filter, but better safe than sorry
 			}
 			// if run.HeadSha == currentSha {

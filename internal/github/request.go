@@ -1,7 +1,9 @@
 package github
 
 import (
+	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -48,12 +50,25 @@ func GithubRequest(request *http.Request) (*http.Response, error) {
 	return response, nil
 }
 
-func DoRequest(method, url string, query url.Values) ([]byte, error) {
-	request, err := http.NewRequest(method, url, nil)
+func DoRequest(method, endpoint string, query map[string]string) ([]byte, error) {
+	request, err := http.NewRequest(method, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
-	request.URL.RawQuery = query.Encode()
+
+	if query != nil {
+		if method == "POST" {
+			data, _ := json.Marshal(query)
+			request.Body = ioutil.NopCloser(bytes.NewReader(data))
+		} else {
+			q := make(url.Values)
+			for k, v := range query {
+				q.Set(k, v)
+			}
+			request.URL.RawQuery = q.Encode()
+		}
+	}
+
 	response, err := GithubRequest(request)
 	if err != nil {
 		return nil, err
@@ -63,7 +78,7 @@ func DoRequest(method, url string, query url.Values) ([]byte, error) {
 		return nil, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return body, fmt.Errorf("failed %v %v: status code: %d", method, url, response.StatusCode)
+		return body, fmt.Errorf("failed %v %v: status code: %d", method, endpoint, response.StatusCode)
 	}
 
 	return body, nil

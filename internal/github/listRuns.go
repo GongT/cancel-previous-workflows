@@ -3,9 +3,16 @@ package github
 import (
 	"encoding/json"
 	"log"
-	"net/url"
+	"os"
 	"strconv"
+	"strings"
 )
+
+var branchName = strings.Replace(os.Getenv("GITHUB_REF"), "refs/heads/", "", 1)
+
+func GetBranchName() string {
+	return branchName
+}
 
 func IsWorkspaceIn(arr []*WorkflowRun, val *WorkflowRun) bool {
 	for _, item := range arr {
@@ -16,16 +23,16 @@ func IsWorkspaceIn(arr []*WorkflowRun, val *WorkflowRun) bool {
 	return false
 }
 
-func ForeachRuns(state StateType, branchName string, cb func(*WorkflowRun, int, int)) (err error) {
+func ForeachRuns(state StateType, cb func(*WorkflowRun, int, int)) (err error) {
 	log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
 
-	query := make(url.Values)
-	query.Set("per_page", strconv.Itoa(requestPerPage))
+	query := make(map[string]string)
+	query["per_page"] = strconv.Itoa(requestPerPage)
 	if len(branchName) > 0 {
-		query.Set("branch", branchName)
+		query["branch"] = branchName
 	}
 	if len(state) > 0 {
-		query.Set("status", string(state))
+		query["status"] = string(state)
 	}
 
 	api := ApiUrl("actions/runs")
@@ -35,7 +42,7 @@ func ForeachRuns(state StateType, branchName string, cb func(*WorkflowRun, int, 
 	dedup := make(map[int64]bool)
 	for {
 		log.Printf("  * page %v...", currentPage)
-		query.Set("page", strconv.Itoa(currentPage))
+		query["page"] = strconv.Itoa(currentPage)
 		currentPage++
 
 		body, err := DoRequest("GET", api, query)
@@ -79,8 +86,8 @@ func ForeachRuns(state StateType, branchName string, cb func(*WorkflowRun, int, 
 	return
 }
 
-func ListRuns(state StateType, branchName string) (runs []*WorkflowRun, err error) {
-	err = ForeachRuns(state, branchName, func(r *WorkflowRun, _, _ int) {
+func ListRuns(state StateType) (runs []*WorkflowRun, err error) {
+	err = ForeachRuns(state, func(r *WorkflowRun, _, _ int) {
 		runs = append(runs, r)
 	})
 	return
