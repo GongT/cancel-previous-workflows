@@ -43,6 +43,7 @@ type WorkflowRun struct {
 }
 
 type WorkflowRunsResponse struct {
+	TotalCount   uint64        `json:"total_count"`
 	WorkflowRuns []WorkflowRun `json:"workflow_runs"`
 }
 
@@ -101,13 +102,13 @@ func main() {
 
 	var runsList []WorkflowRun
 	if queued, err := listRuns(StateTypeQueue); err == nil {
-		runsList = append(runsList, queued.WorkflowRuns...)
+		runsList = append(runsList, queued...)
 	} else {
 		log.Printf("error get action runs: %v\n", err)
 		return
 	}
 	if inProgress, err := listRuns(StateTypeInProgress); err == nil {
-		runsList = append(runsList, inProgress.WorkflowRuns...)
+		runsList = append(runsList, inProgress...)
 	} else {
 		log.Printf("error get action runs: %v\n", err)
 		return
@@ -183,19 +184,35 @@ func getWorkflowId() (ret int64, err error) {
 	return 0, fmt.Errorf("workflow with name '%v' did not exists", workflowName)
 }
 
-func listRuns(state StateType) (workflows WorkflowRunsResponse, err error) {
-	log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
-	query := make(url.Values)
-	query.Set("branch", branchName)
-	query.Set("status", string(state))
-	body, err := doRequest(githubApi("repos/%s/actions/runs", githubRepo), query)
-	if err != nil {
-		return
-	}
+func listRuns(state StateType) (runs []WorkflowRun, err error) {
+	var curr uint64 = 0
+	for {
+		log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
+		query := make(url.Values)
 
-	err = json.Unmarshal(body, &workflows)
-	if err != nil {
-		log.Println(err)
+		query.Set("page", strconv.FormatUint(curr, 10))
+		query.Set("per_page", "100")
+		query.Set("branch", branchName)
+		query.Set("status", string(state))
+		body, err := doRequest(githubApi("repos/%s/actions/runs", githubRepo), query)
+		if err != nil {
+			log.Printf("error request api [page=%v]: %v", curr, err)
+			continue
+		}
+
+		var workflows WorkflowRunsResponse
+		err = json.Unmarshal(body, &workflows)
+		if err != nil {
+			log.Printf("error parse json [page=%v]: %v", curr, err)
+			continue
+		}
+
+		runs = append(runs, workflows.WorkflowRuns...)
+		curr++
+
+		if workflows.TotalCount <= (curr * 100) {
+			break
+		}
 	}
 
 	return
