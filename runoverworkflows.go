@@ -57,8 +57,10 @@ var workflowName = os.Getenv("GITHUB_WORKFLOW")
 var currentRunNumber, _ = strconv.Atoi(os.Getenv("GITHUB_RUN_NUMBER"))
 var isCancelAll = len(os.Getenv("CANCEL_ALL")) > 0
 var requestPerPage = 100
+var ua = "CreatedBy/GongT repo/" + githubRepo + " workflow/" + workflowName + " run/" + os.Getenv("GITHUB_RUN_NUMBER")
 
 func githubRequest(request *http.Request) (*http.Response, error) {
+	request.Header.Set("User-Agent", ua)
 	request.Header.Set("Accept", "application/vnd.github.v3+json")
 	request.Header.Set("Authorization", fmt.Sprintf("token %s", githubToken))
 	response, err := httpClient.Do(request)
