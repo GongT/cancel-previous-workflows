@@ -53,7 +53,7 @@ func main() {
 	var shouldCancel []*github.WorkflowRun
 	if isCancelAll {
 		for _, run := range runsListDedup {
-			if run.RunNumber == currentRunNumber {
+			if currentRunNumber != 0 && run.RunNumber >= currentRunNumber {
 				continue // skip my self anyway
 			}
 			shouldCancel = append(shouldCancel, run)
@@ -75,7 +75,7 @@ func main() {
 			// if run.HeadSha == currentSha {
 			// 	continue // not canceling my own jobs
 			// }
-			if currentRunNumber != 0 && run.RunNumber > currentRunNumber {
+			if currentRunNumber != 0 && run.RunNumber >= currentRunNumber {
 				log.Printf("      ! [%v] skip run number: %v", run.Id, run.RunNumber)
 				continue // only canceling previous executions, not newer ones
 			}
