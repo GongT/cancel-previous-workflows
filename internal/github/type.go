@@ -9,6 +9,19 @@ const (
 	StateTypeAny        StateType = ""
 )
 
+type ConclusionType string
+
+const (
+	ConclusionSuccess        ConclusionType = "success"
+	ConclusionFailure        ConclusionType = "failure"
+	ConclusionNeutral        ConclusionType = "neutral"
+	ConclusionCancelled      ConclusionType = "cancelled"
+	ConclusionSkipped        ConclusionType = "skipped"
+	ConclusionTimed_out      ConclusionType = "timed_out"
+	ConclusionActionRequired ConclusionType = "action_required"
+	ConclusionAny            ConclusionType = ""
+)
+
 type Workflow struct {
 	Id   int64  `json:"id"`
 	Name string `json:"name"`
@@ -20,12 +33,13 @@ type WorkflowsResponse struct {
 }
 
 type WorkflowRun struct {
-	Id         int64  `json:"id"`
-	Status     string `json:"status"`
-	HeadSha    string `json:"head_sha"`
-	HeadBranch string `json:"head_branch"`
-	RunNumber  int    `json:"run_number"`
-	WorkflowId int64  `json:"workflow_id"`
+	Id         int64          `json:"id"`
+	Status     StateType      `json:"status"`
+	Conclusion ConclusionType `json:"conclusion"`
+	HeadSha    string         `json:"head_sha"`
+	HeadBranch string         `json:"head_branch"`
+	RunNumber  int            `json:"run_number"`
+	WorkflowId int64          `json:"workflow_id"`
 }
 
 type WorkflowRunsResponse struct {
