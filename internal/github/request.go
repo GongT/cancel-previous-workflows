@@ -19,7 +19,7 @@ var githubToken = os.Getenv("GITHUB_TOKEN")
 
 var ua = "CreatedBy/GongT repo/" + githubRepo + " workflow/" + os.Getenv("GITHUB_WORKFLOW") + " run/" + os.Getenv("GITHUB_RUN_NUMBER")
 
-var requestPerPage = 100
+var requestPerPage = 99
 
 func init() {
 	if len(githubApiUrl) == 0 {
@@ -51,6 +51,13 @@ func GithubRequest(request *http.Request) (*http.Response, error) {
 }
 
 func DoRequest(method, endpoint string, query map[string]string) ([]byte, error) {
+	q := make(url.Values)
+	for k, v := range query {
+		q.Set(k, v)
+	}
+	queryString := q.Encode()
+	fmt.Fprintf(os.Stderr, "\x1B[2m%v %v?%v\x1B[0m\n", method, endpoint, queryString)
+
 	request, err := http.NewRequest(method, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -61,11 +68,7 @@ func DoRequest(method, endpoint string, query map[string]string) ([]byte, error)
 			data, _ := json.Marshal(query)
 			request.Body = ioutil.NopCloser(bytes.NewReader(data))
 		} else {
-			q := make(url.Values)
-			for k, v := range query {
-				q.Set(k, v)
-			}
-			request.URL.RawQuery = q.Encode()
+			request.URL.RawQuery = queryString
 		}
 	}
 

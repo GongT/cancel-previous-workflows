@@ -6,11 +6,13 @@ import (
 	"regexp"
 
 	"github.com/GongT/cancel-previous-workflows/internal/github"
+	"github.com/davecgh/go-spew/spew"
 )
 
 func main() {
 	if len(github.GetBranchName()) == 0 {
-		log.Println("branch is required.")
+		log.Println("branch [env:GITHUB_REF] is required.")
+		os.Exit(1)
 	}
 
 	filter, err := regexp.Compile(os.Getenv("FILTER_REGEX"))
@@ -26,13 +28,17 @@ func main() {
 	start := func(r *github.Workflow, current, total int) {
 		if !filter.MatchString(r.Name) {
 			log.Printf("  [%2d/%2d] skip  [%v]\n", current, total, r.Name)
+			return
 		}
 
-		_, err := github.DoRequest("POST", github.ApiUrl("actions/workflows/%v/dispatches", r.Id), q)
+		body, err := github.DoRequest("POST", github.ApiUrl("actions/workflows/%v/dispatches", r.Id), q)
 		if err == nil {
 			log.Printf("  [%2d/%2d] done  [%v]\n", current, total, r.Name)
 		} else {
 			log.Printf("  [%2d/%2d] error [%v]: %v\n", current, total, r.Name, err)
+			if body != nil {
+				spew.Dump(body)
+			}
 		}
 	}
 

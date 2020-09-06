@@ -24,18 +24,26 @@ func IsWorkspaceIn(arr []*WorkflowRun, val *WorkflowRun) bool {
 }
 
 func ForeachRuns(state StateType, cb func(*WorkflowRun, int, int)) (err error) {
-	log.Printf("listing %v runs for branch %s in repo %s\n", state, branchName, githubRepo)
-
 	query := make(map[string]string)
-	query["per_page"] = strconv.Itoa(requestPerPage)
-	if len(branchName) > 0 {
-		query["branch"] = branchName
-	}
 	if len(state) > 0 {
 		query["status"] = string(state)
 	}
+	if len(branchName) > 0 {
+		query["branch"] = branchName
+	}
+	return foreachApi(ApiUrl("actions/runs"), query, cb)
+}
 
-	api := ApiUrl("actions/runs")
+func ForeachWorkflowRuns(workflow int64, cb func(*WorkflowRun, int, int)) (err error) {
+	query := make(map[string]string)
+
+	return foreachApi(ApiUrl("actions/workflows/%v/runs", workflow), query, cb)
+}
+
+func foreachApi(api string, query map[string]string, cb func(*WorkflowRun, int, int)) (err error) {
+	log.Printf("listing runs for branch %s in repo %s\n", branchName, githubRepo)
+
+	query["per_page"] = strconv.Itoa(requestPerPage)
 
 	var currentPage = 0
 	var processedCount = 0
