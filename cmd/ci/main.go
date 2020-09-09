@@ -32,13 +32,17 @@ func main() {
 
 	shoudOperate := filterBranch(olderThanMe)
 
-	var shouldCancel []*github.WorkflowRun
-	for _, run := range shoudOperate {
-		if run.Status != github.StateTypeComplete {
-			shouldCancel = append(shouldCancel, run)
+	if isCancelAll {
+		var shouldCancel []*github.WorkflowRun
+		for _, run := range shoudOperate {
+			if run.Status != github.StateTypeComplete {
+				shouldCancel = append(shouldCancel, run)
+			}
 		}
+		doCancel(shouldCancel)
+	} else {
+		doCancel(shoudOperate)
 	}
-	doCancel(shouldCancel)
 
 	doDelete(shoudOperate)
 }
@@ -80,6 +84,9 @@ func requestList() (runsList []*github.WorkflowRun) {
 }
 
 func filterOld(runsListDedup []*github.WorkflowRun) []*github.WorkflowRun {
+	if isCancelAll {
+		return runsListDedup
+	}
 	var olderThanMe []*github.WorkflowRun
 	for _, run := range runsListDedup {
 		if currentRunNumber != 0 && run.RunNumber >= currentRunNumber {
@@ -91,18 +98,19 @@ func filterOld(runsListDedup []*github.WorkflowRun) []*github.WorkflowRun {
 }
 
 func filterBranch(olderThanMe []*github.WorkflowRun) []*github.WorkflowRun {
+	if isCancelAll {
+		return olderThanMe
+	}
 	var shoudOperate []*github.WorkflowRun
-	if !isCancelAll {
-		for _, run := range olderThanMe {
-			if run.HeadBranch != github.GetBranchName() {
-				log.Printf("      ! [%v] skip other branch: %v != %v", run.Id, run.HeadBranch, github.GetBranchName())
-				continue // should not happen cuz we pre-filter, but better safe than sorry
-			}
-			// if run.HeadSha == currentSha {
-			// 	continue // not canceling my own jobs
-			// }
-			shoudOperate = append(shoudOperate, run)
+	for _, run := range olderThanMe {
+		if run.HeadBranch != github.GetBranchName() {
+			log.Printf("      ! [%v] skip other branch: %v != %v", run.Id, run.HeadBranch, github.GetBranchName())
+			continue // should not happen cuz we pre-filter, but better safe than sorry
 		}
+		// if run.HeadSha == currentSha {
+		// 	continue // not canceling my own jobs
+		// }
+		shoudOperate = append(shoudOperate, run)
 	}
 	return shoudOperate
 }
