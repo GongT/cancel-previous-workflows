@@ -15,7 +15,7 @@ func main() {
 }
 func eachWorkflow(r *github.Workflow, current, total int) {
 	log.Printf("workflow [%v/%v] %v:\n", current, total, r.Name)
-	if err := github.ForeachWorkflowRuns(r.Id, eachRuns); err != nil {
+	if err := github.ForeachWorkflowRuns(r.Id, nil, eachRuns); err != nil {
 		log.Printf("error when list workflows: %v\n", err)
 	}
 }

@@ -34,14 +34,16 @@ func ForeachRuns(state StateType, cb func(*WorkflowRun, int, int)) (err error) {
 	return foreachApi(ApiUrl("actions/runs"), query, cb)
 }
 
-func ForeachWorkflowRuns(workflow int64, cb func(*WorkflowRun, int, int)) (err error) {
-	query := make(map[string]string)
-
+func ForeachWorkflowRuns(workflow int64, query map[string]string, cb func(*WorkflowRun, int, int)) (err error) {
 	return foreachApi(ApiUrl("actions/workflows/%v/runs", workflow), query, cb)
 }
 
 func foreachApi(api string, query map[string]string, cb func(*WorkflowRun, int, int)) (err error) {
 	log.Printf("listing runs for branch %s in repo %s\n", branchName, githubRepo)
+
+	if query == nil {
+		query = make(map[string]string)
+	}
 
 	query["per_page"] = strconv.Itoa(requestPerPage)
 
@@ -94,7 +96,22 @@ func foreachApi(api string, query map[string]string, cb func(*WorkflowRun, int, 
 	return
 }
 
-func ListRuns(state StateType) (runs []*WorkflowRun, err error) {
+func ListWorkflowRuns(workflow int64, state StateType) (runs []*WorkflowRun, err error) {
+	if workflow != 0 {
+		q := make(map[string]string)
+		if len(state) > 0 {
+			q["status"] = string(state)
+		}
+		err = ForeachWorkflowRuns(workflow, q, func(r *WorkflowRun, _, _ int) {
+			runs = append(runs, r)
+		})
+		return
+	} else {
+		return listAllRuns(state)
+	}
+}
+
+func listAllRuns(state StateType) (runs []*WorkflowRun, err error) {
 	err = ForeachRuns(state, func(r *WorkflowRun, _, _ int) {
 		runs = append(runs, r)
 	})

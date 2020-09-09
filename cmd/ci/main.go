@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/GongT/cancel-previous-workflows/internal/github"
@@ -12,6 +13,7 @@ import (
 var currentSha = os.Getenv("GITHUB_SHA")
 var currentRunNumber, _ = strconv.Atoi(os.Getenv("GITHUB_RUN_NUMBER"))
 var isCancelAll = len(os.Getenv("NO_FILTER")) > 0
+var needDeleteOld = strings.ToLower(os.Getenv("DELETE")) == "yes"
 
 func main() {
 	log.Printf("CurrentRunNumber=%v\n", currentRunNumber)
@@ -20,53 +22,78 @@ func main() {
 	log.Printf("GITHUB_SHA=%v\n", currentSha)
 	log.Printf("isCancelAll=%v\n", isCancelAll)
 
-	var runsList []*github.WorkflowRun
-	if queued, err := github.ListRuns(github.StateTypeQueue); err == nil {
-		runsList = append(runsList, queued...)
-	} else {
-		log.Printf("error get action runs: %v\n", err)
+	runsList := requestList()
+	if runsList == nil {
 		return
 	}
-	if inProgress, err := github.ListRuns(github.StateTypeInProgress); err == nil {
-		runsList = append(runsList, inProgress...)
-	} else {
-		log.Printf("error get action runs: %v\n", err)
-		return
-	}
+	log.Printf("  * found %v runs", len(runsList))
 
-	runsListDedup := make([]*github.WorkflowRun, 0, len(runsList))
-	skip := make([]int64, 0, len(runsList))
-	for _, r := range runsList {
-		if !github.IsWorkspaceIn(runsListDedup, r) {
-			runsListDedup = append(runsListDedup, r)
-		} else {
-			skip = append(skip, r.Id)
-		}
-	}
-	if (len(skip)) > 0 {
-		log.Printf("skip ids: %v", skip)
-	}
+	olderThanMe := filterOld(runsList)
 
-	log.Printf("  * found %v runs", len(runsListDedup))
+	shoudOperate := filterBranch(olderThanMe)
 
 	var shouldCancel []*github.WorkflowRun
-	if isCancelAll {
-		for _, run := range runsListDedup {
-			if currentRunNumber != 0 && run.RunNumber >= currentRunNumber {
-				continue // skip my self anyway
-			}
+	for _, run := range shoudOperate {
+		if run.Status != github.StateTypeComplete {
 			shouldCancel = append(shouldCancel, run)
 		}
+	}
+	doCancel(shouldCancel)
+
+	doDelete(shoudOperate)
+}
+
+func requestList() (runsList []*github.WorkflowRun) {
+	log.Printf("finding workflow %v in repo %v\n", github.GetCurrentWorkflowName(), github.GetCurrentRepo())
+	var workflowId int64
+	if isCancelAll {
+		workflowId = 0
 	} else {
-		log.Printf("finding workflow %v in repo %v\n", github.GetCurrentWorkflowName(), github.GetCurrentRepo())
-		workflowId, err := github.GetWorkflowId()
-		log.Printf("    id is %v\n", workflowId)
+		id, err := github.GetWorkflowId()
 		if err != nil {
 			log.Printf("error find workflow id: %v\n", err)
 			return
 		}
+		workflowId = id
+	}
+	log.Printf("    id is %v\n", workflowId)
 
-		for _, run := range runsListDedup {
+	if needDeleteOld {
+		if list, err := github.ListWorkflowRuns(workflowId, github.StateTypeAny); err == nil {
+			runsList = list
+		} else {
+			log.Printf("error get action runs: %v\n", err)
+		}
+	} else {
+		if queued, err := github.ListWorkflowRuns(workflowId, github.StateTypeQueue); err == nil {
+			runsList = append(runsList, queued...)
+		} else {
+			log.Printf("error get action runs: %v\n", err)
+		}
+		if inProgress, err := github.ListWorkflowRuns(workflowId, github.StateTypeInProgress); err == nil {
+			runsList = append(runsList, inProgress...)
+		} else {
+			log.Printf("error get action runs: %v\n", err)
+		}
+	}
+	return
+}
+
+func filterOld(runsListDedup []*github.WorkflowRun) []*github.WorkflowRun {
+	var olderThanMe []*github.WorkflowRun
+	for _, run := range runsListDedup {
+		if currentRunNumber != 0 && run.RunNumber >= currentRunNumber {
+			continue
+		}
+		olderThanMe = append(olderThanMe, run)
+	}
+	return olderThanMe
+}
+
+func filterBranch(olderThanMe []*github.WorkflowRun) []*github.WorkflowRun {
+	var shoudOperate []*github.WorkflowRun
+	if !isCancelAll {
+		for _, run := range olderThanMe {
 			if run.HeadBranch != github.GetBranchName() {
 				log.Printf("      ! [%v] skip other branch: %v != %v", run.Id, run.HeadBranch, github.GetBranchName())
 				continue // should not happen cuz we pre-filter, but better safe than sorry
@@ -74,22 +101,16 @@ func main() {
 			// if run.HeadSha == currentSha {
 			// 	continue // not canceling my own jobs
 			// }
-			if currentRunNumber != 0 && run.RunNumber >= currentRunNumber {
-				log.Printf("      ! [%v] skip run number: %v", run.Id, run.RunNumber)
-				continue // only canceling previous executions, not newer ones
-			}
-			if run.WorkflowId != workflowId {
-				log.Printf("      ! [%v] skip other workflow: %v", run.Id, run.WorkflowId)
-				continue
-			}
-
-			shouldCancel = append(shouldCancel, run)
+			shoudOperate = append(shoudOperate, run)
 		}
 	}
+	return shoudOperate
+}
 
-	log.Printf("          %v should cancel", len(shouldCancel))
-
+func doCancel(shouldCancel []*github.WorkflowRun) {
 	count := len(shouldCancel)
+
+	log.Printf("          %v should cancel", count)
 
 	s := strconv.Itoa(len(strconv.Itoa(count)))
 
@@ -108,11 +129,15 @@ func main() {
 		}
 	}
 	log.Printf("All done, %v success, %v error.\n", okCnt, errCnt)
+}
 
-	if os.Getenv("DELETE") == "yes" {
-		time.Sleep(time.Second * 10)
+func doDelete(shoudDelete []*github.WorkflowRun) {
+	if needDeleteOld {
 		log.Println("Delete all:")
-		for index, run := range shouldCancel {
+		time.Sleep(time.Second * 30)
+		count := len(shoudDelete)
+		log.Printf("          %v should delete", count)
+		for index, run := range shoudDelete {
 			github.RmeoveWorkflowRunVoid(run, index, count)
 		}
 		log.Println("Delete all done.")
