@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/GongT/cancel-previous-workflows/internal/github"
 )
@@ -107,4 +108,15 @@ func main() {
 		}
 	}
 	log.Printf("All done, %v success, %v error.\n", okCnt, errCnt)
+
+	if os.Getenv("DELETE") == "yes" {
+		time.Sleep(time.Second * 10)
+		log.Println("Delete all:")
+		for index, run := range shouldCancel {
+			github.RmeoveWorkflowRunVoid(run, index, count)
+		}
+		log.Println("Delete all done.")
+	} else {
+		log.Println("Not delete old runs.")
+	}
 }
