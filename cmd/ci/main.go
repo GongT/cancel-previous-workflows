@@ -32,17 +32,13 @@ func main() {
 
 	shoudOperate := filterBranch(olderThanMe)
 
-	if isCancelAll {
-		var shouldCancel []*github.WorkflowRun
-		for _, run := range shoudOperate {
-			if run.Status != github.StateTypeComplete {
-				shouldCancel = append(shouldCancel, run)
-			}
+	var shouldCancel []*github.WorkflowRun
+	for _, run := range shoudOperate {
+		if run.Status != github.StateTypeComplete {
+			shouldCancel = append(shouldCancel, run)
 		}
-		doCancel(shouldCancel)
-	} else {
-		doCancel(shoudOperate)
 	}
+	doCancel(shouldCancel)
 
 	doDelete(shoudOperate)
 }
