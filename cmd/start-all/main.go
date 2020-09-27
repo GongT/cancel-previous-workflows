@@ -26,8 +26,8 @@ func main() {
 	q["ref"] = github.GetBranchName()
 
 	start := func(r *github.Workflow, current, total int) {
-		if !filter.MatchString(r.Name) {
-			log.Printf("  [%2d/%2d] skip  [%v]\n", current, total, r.Name)
+		if !filter.MatchString(r.Name) && !filter.MatchString(r.Path) {
+			log.Printf("  [%2d/%2d] skip  [%v]: %v\n", current, total, r.Name, r.Path)
 			return
 		}
 

@@ -84,8 +84,10 @@ func ForeachWorkflow(cb func(*Workflow, int, int)) error {
 			dedup[item.Id] = true
 
 			cb(&Workflow{
-				Id:   item.Id,
-				Name: item.Name,
+				Id:    item.Id,
+				Name:  item.Name,
+				Path:  item.Path,
+				State: item.State,
 			}, processedCount, workflows.TotalCount)
 		}
 

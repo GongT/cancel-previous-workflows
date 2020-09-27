@@ -23,8 +23,10 @@ const (
 )
 
 type Workflow struct {
-	Id   int64  `json:"id"`
-	Name string `json:"name"`
+	Id    int64  `json:"id"`
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	State string `json:"state"`
 }
 
 type WorkflowsResponse struct {
