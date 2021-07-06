@@ -16,7 +16,7 @@ jobs:
         uses: GongT/cancel-previous-workflows@master
         env:
           GITHUB_TOKEN: ${{ github.token }}  # Required
-		  DELETE: true  # optional, defaults to false, delete all previous runs (including completed one)
+	  DELETE: "yes"  # optional, defaults to false, delete all previous runs (including completed one)
 ```
 
 ## tools:
